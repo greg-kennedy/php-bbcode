@@ -39,5 +39,7 @@ test('[u]To make underlined text, type [[u].[/u]', '<u>To make underlined text, 
 test('[b]test', '<b>test</b>');
 // Unordered tag
 test('Here is [b]bold and [i]italics[/b][/i] text.', 'Here is <b>bold and <i>italics</i></b>[/i] text.');
+// td outside tr
+test('[table][tr][th]Name[/th][th]Phone[/th][/tr][td]Greg[/td][td]555-1212[/td][/table]','<table><tr><th>Name</th><th>Phone</th></tr>[td]Greg[/td][td]555-1212[/td]</table>');
 
 ?>

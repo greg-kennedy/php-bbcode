@@ -3,7 +3,10 @@
 /* helper function: close a tag */
 function _bbcode_close_tag($tag) : string
 {
-  if ($tag === 'b' || $tag === 'i' || $tag === 'u' || $tag === 's' || $tag === 'sup' || $tag === 'sub') {
+  if ($tag === 'b' || $tag === 'i' || $tag === 'u' || $tag === 's' || $tag === 'sup' || $tag === 'sub' ||
+      $tag === 'ul' || $tag === 'ol' ||
+      $tag === 'table' || $tag === 'tr' || $tag === 'th' || $tag === 'td')
+  {
     return '</' . $tag . '>';
 //TODO: url, url=
   }
@@ -27,23 +30,8 @@ function _bbcode_close_tag($tag) : string
     $result .= '<span style="font-color:30px">';*/
 //TODO: [list]
   }
-  if ($tag === 'ul') {
-    return '</ul>';
-  }
-  if ($tag === 'ol') {
-    return '</ol>';
-  }
   if ($tag === 'li' || $tag === '*') {
     return '</li>';
-  }
-  if ($tag === 'table') {
-    return '</table>';
-  }
-  if ($tag === 'tr') {
-    return '</tr>';
-  }
-  if ($tag === 'td') {
-    return '</td>';
   }
 
   // This should never happen: we somehow pushed a tag above that we are not able to handle here
@@ -140,17 +128,33 @@ function bbcode_to_html($input) : string
           array_push($tag_stack, 'ol');
           $result .= '<ol>';
         } elseif ($tag === 'li' || $tag === '*') {
-          array_push($tag_stack, 'li');
-          $result .= '<li>';
+          // Disallow [li] outside of [ol] or [ul]
+          if (array_search('ol', $tag_stack, TRUE) !== FALSE ||
+              array_search('ul', $tag_stack, TRUE) !== FALSE) {
+            array_push($tag_stack, 'li');
+            $result .= '<li>';
+          } else {
+            $result = $result . '[' . $buffer . ']';
+          }
         } elseif ($tag === 'table') {
           array_push($tag_stack, 'table');
           $result .= '<table>';
         } elseif ($tag === 'tr') {
-          array_push($tag_stack, 'tr');
-          $result .= '<tr>';
-        } elseif ($tag === 'td') {
-          array_push($tag_stack, 'td');
-          $result .= '<td>';
+          // Disallow [tr] outside of [table]
+          if (array_search('table', $tag_stack, TRUE) !== FALSE) {
+            array_push($tag_stack, 'tr');
+            $result .= '<tr>';
+          } else {
+            $result = $result . '[' . $buffer . ']';
+          }
+        } elseif ($tag === 'td' || $tag === 'th') {
+          // Disallow [th] / [td] outside of [tr]
+          if (array_search('tr', $tag_stack, TRUE) !== FALSE) {
+            array_push($tag_stack, $tag);
+            $result = $result . '<' . $tag . '>';
+          } else {
+            $result = $result . '[' . $buffer . ']';
+          }
         } else {
           // Unrecognized tag!
           $result = $result . '[' . $buffer . ']';
