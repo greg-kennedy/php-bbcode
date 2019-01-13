@@ -16,7 +16,7 @@ These BBcode tags are supported and converted to HTML equivalent:
 * `[[` (escapes to `[`)
 * `[b]`, `[i]`, `[u]`, `[s]`, `[sub]`, `[sup]`
 * `[color=X]`, `[size=Y]`, `[font color=X size=Y]`
-* `[quote]`
+* `[quote]` / `[blockquote]`
 * `[pre]` / `[code]`
 * `[ol]`, `[ul]`, `[li]` / `[*]`
 * `[table]`, `[tr]`, `[th]`, `[td]`

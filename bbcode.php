@@ -1,48 +1,16 @@
 <?php
 
-/* helper function: close a tag */
-function _bbcode_close_tag($tag) : string
-{
-  if ($tag === 'b' || $tag === 'i' || $tag === 'u' || $tag === 's' || $tag === 'sup' || $tag === 'sub' ||
-      $tag === 'ul' || $tag === 'ol' ||
-      $tag === 'table' || $tag === 'tr' || $tag === 'th' || $tag === 'td')
-  {
-    return '</' . $tag . '>';
-//TODO: url, url=
-  }
-  if ($tag === 'img') {
-//TODO: img parsing mode
-    return '">';
-  }
-  if ($tag === 'pre' || $tag === 'code') {
-    return '</pre>';
-//TODO: code parsing mode
-  }
-  if ($tag === 'quote') {
-    return '</blockquote>';
-//TODO: quote with author
-//TODO: font styles
-  /*}
-  if ($tag === 'size') {
-    $result .= '<span style="font-size:30px">';*/
-  /*}
-  if ($tag === 'color') {
-    $result .= '<span style="font-color:30px">';*/
-//TODO: [list]
-  }
-  if ($tag === 'li' || $tag === '*') {
-    return '</li>';
-  }
-
-  // This should never happen: we somehow pushed a tag above that we are not able to handle here
-  //$result = $result . '</' . $tag . '>';
-  throw new Exception("Error: tried to close tag $tag");
-}
-
-/* Renders a post to HTML, for inclusion into a document. */
+// Renders a post to HTML, for inclusion into a document.
 function bbcode_to_html($input) : string
 {
-  /* split input string into array using regex, UTF-8 aware */
+  // Tag aliases.  Item on left translates to item on right.
+  static $alias = [
+    'code' => 'pre',
+    'quote' => 'blockquote',
+    '*' => 'li'
+  ];
+
+  // split input string into array using regex, UTF-8 aware
   $characters = preg_split('//u', $input, null, PREG_SPLIT_NO_EMPTY);
 
   // begin with the empty string
@@ -97,6 +65,9 @@ function bbcode_to_html($input) : string
         //  Try to split tag, args
         $arr = explode('=', $buffer);
         $tag = strtolower($arr[0]);
+        if (isset($alias[$tag])) {
+          $tag = $alias[$tag];
+        }
 
         // Push the tag into the tag_stack for pop later
         if ($tag === 'b' || $tag === 'i' || $tag === 'u' || $tag === 's' || $tag === 'sup' || $tag === 'sub') {
@@ -107,19 +78,20 @@ function bbcode_to_html($input) : string
 //TODO: img parsing mode
           array_push($tag_stack, $tag);
           $result .= '<img src="';
-        } elseif ($tag === 'pre' || $tag === 'code') {
+        } elseif ($tag === 'pre') {
           array_push($tag_stack, 'pre');
           $result .= '<pre>';
 //TODO: code parsing mode
-        } elseif ($tag === 'quote') {
-          array_push($tag_stack, 'quote');
+        } elseif ($tag === 'blockquote') {
+          array_push($tag_stack, 'blockquote');
           $result .= '<blockquote>';
-//TODO: quote with author
 //TODO: font styles
         /*} elseif ($tag === 'size') {
-          $result .= '<span style="font-size:30px">';*/
-        /*} elseif ($tag === 'color') {
-          $result .= '<span style="font-color:30px">';*/
+          $result .= '<span style="font-size:30px">';
+        } elseif ($tag === 'color') {
+          $result .= '<span style="font-color:red">';
+        } elseif ($tag === 'font') {
+          $result .= '<span style="font-color:30px;color=red">';*/
 //TODO: [list]
         } elseif ($tag === 'ul') {
           array_push($tag_stack, 'ul');
@@ -127,7 +99,7 @@ function bbcode_to_html($input) : string
         } elseif ($tag === 'ol') {
           array_push($tag_stack, 'ol');
           $result .= '<ol>';
-        } elseif ($tag === 'li' || $tag === '*') {
+        } elseif ($tag === 'li') {
           // Disallow [li] outside of [ol] or [ul]
           if (array_search('ol', $tag_stack, TRUE) !== FALSE ||
               array_search('ul', $tag_stack, TRUE) !== FALSE) {
@@ -171,17 +143,22 @@ function bbcode_to_html($input) : string
     } elseif ($mode === 3) {
       // mode 3 is within a closing tag
       if ($ch === ']') {
-        // Tag end, check the tag stack
-        $buffer = strtolower($buffer);
+        // Tag end
+        $tag = strtolower($buffer);
+        // tag aliases
+        if (isset($alias[$tag])) {
+          $tag = $alias[$tag];
+        }
+
         if (array_search($buffer, $tag_stack, TRUE) === FALSE) {
           // Attempted to close a tag that was not on the stack!
           $result = $result . '[/' . $buffer . ']';
         } else {
-//TODO: pop repeatedly until we pop the tag, and close everything on the way
+          //pop repeatedly until we pop the tag, and close everything on the way
           do {
-            $tag = array_pop($tag_stack);
-            $result .= _bbcode_close_tag($tag);
-          } while ($tag !== $buffer);
+            $popped_tag = array_pop($tag_stack);
+            $result = $result . '</' . $popped_tag . '>';
+          } while ($tag !== $popped_tag);
         }
         $mode = 0;
       } elseif (preg_match('/[A-Za-z*]/u', $ch)) {
@@ -202,7 +179,8 @@ function bbcode_to_html($input) : string
   // Close any remaining stray tags left on the stack
   while ($tag_stack)
   {
-    $result .= _bbcode_close_tag(array_pop($tag_stack));
+    $tag = array_pop($tag_stack);
+    $result = $result . '</' . $tag . '>';
   }
 
   // All done!
