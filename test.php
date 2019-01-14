@@ -9,17 +9,22 @@ function test($a, $b)
   $test_num ++;
   echo "Test #", $test_num, ": ";
 
-  $r = bbcode_to_html($a);
+  try {
+    $r = bbcode_to_html($a);
 
-  if ($r !== $b)
-  {
-    echo "FAILED - items are not equal:\n= A =========\n$r\n= B =========\n$b\n=============\n";
+    if ($r !== $b)
+    {
+      echo "FAILED - items are not equal:\n= A =========\n$r\n= B =========\n$b\n=============\n";
+      return 1;
+    }
+    else
+    {
+      echo "passed\n";
+      return 0;
+    }
+  } catch (Exception $e) {
+    echo 'ERROR - Caught exception: ',  $e->getMessage(), "\n= INPUT =====\n$a\n";
     return 1;
-  }
-  else
-  {
-    echo "passed\n";
-    return 0;
   }
 }
 
@@ -45,6 +50,8 @@ test('Get the latest php-bbcode release [url=https://github.com/greg-kennedy/php
 
 // Unclosed tag
 test('[b]test', '<b>test</b>');
+// Unterminated tag
+test('[btest', '[btest');
 // Unordered tag
 test('Here is [b]bold and [i]italics[/b][/i] text.', 'Here is <b>bold and <i>italics</i></b>[/i] text.');
 // Mismatched aliased tag
