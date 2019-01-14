@@ -1,10 +1,11 @@
 <?php
 
-// Renders a post to HTML, for inclusion into a document.
+// Renders a BBCode string to HTML, for inclusion into a document.
 function bbcode_to_html($input) : string
 {
   // Tag aliases.  Item on left translates to item on right.
   static $alias = [
+    'url' => 'a',
     'code' => 'pre',
     'quote' => 'blockquote',
     '*' => 'li'
@@ -59,46 +60,21 @@ function bbcode_to_html($input) : string
         $mode = 0;
       }
     } elseif ($mode === 2) {
-      // mode 2 is within a square brace
+      // mode 2 is within a square brace, but no equals or space (yet)
       if ($ch === ']') {
         // End square brace of opening tag
-        //  Try to split tag, args
-        $arr = explode('=', $buffer);
-        $tag = strtolower($arr[0]);
+        $tag = strtolower($buffer);
         if (isset($alias[$tag])) {
           $tag = $alias[$tag];
         }
 
-        // Push the tag into the tag_stack for pop later
-        if ($tag === 'b' || $tag === 'i' || $tag === 'u' || $tag === 's' || $tag === 'sup' || $tag === 'sub') {
+        // Simple tags (no validation or alternate modes)
+        if ($tag === 'b' || $tag === 'i' || $tag === 'u' || $tag === 's' || $tag === 'sup' || $tag === 'sub' ||
+            $tag === 'blockquote' ||
+            $tag === 'ol' || $tag === 'ul' ||
+            $tag === 'table') {
           array_push($tag_stack, $tag);
           $result = $result . '<' . $tag . '>';
-//TODO: url, url=
-        } elseif ($tag === 'img') {
-//TODO: img parsing mode
-          array_push($tag_stack, $tag);
-          $result .= '<img src="';
-        } elseif ($tag === 'pre') {
-          array_push($tag_stack, 'pre');
-          $result .= '<pre>';
-//TODO: code parsing mode
-        } elseif ($tag === 'blockquote') {
-          array_push($tag_stack, 'blockquote');
-          $result .= '<blockquote>';
-//TODO: font styles
-        /*} elseif ($tag === 'size') {
-          $result .= '<span style="font-size:30px">';
-        } elseif ($tag === 'color') {
-          $result .= '<span style="font-color:red">';
-        } elseif ($tag === 'font') {
-          $result .= '<span style="font-color:30px;color=red">';*/
-//TODO: [list]
-        } elseif ($tag === 'ul') {
-          array_push($tag_stack, 'ul');
-          $result .= '<ul>';
-        } elseif ($tag === 'ol') {
-          array_push($tag_stack, 'ol');
-          $result .= '<ol>';
         } elseif ($tag === 'li') {
           // Disallow [li] outside of [ol] or [ul]
           if (array_search('ol', $tag_stack, TRUE) !== FALSE ||
@@ -108,9 +84,6 @@ function bbcode_to_html($input) : string
           } else {
             $result = $result . '[' . $buffer . ']';
           }
-        } elseif ($tag === 'table') {
-          array_push($tag_stack, 'table');
-          $result .= '<table>';
         } elseif ($tag === 'tr') {
           // Disallow [tr] outside of [table]
           if (array_search('table', $tag_stack, TRUE) !== FALSE) {
@@ -120,20 +93,64 @@ function bbcode_to_html($input) : string
             $result = $result . '[' . $buffer . ']';
           }
         } elseif ($tag === 'td' || $tag === 'th') {
-          // Disallow [th] / [td] outside of [tr]
-          if (array_search('tr', $tag_stack, TRUE) !== FALSE) {
+          // Disallow [th] / [td] outside of [tr] outside of [table]
+          $tr_index = array_search('tr', $tag_stack, TRUE);
+          $table_index = array_search('table', $tag_stack, TRUE);
+          if ($tr_index !== FALSE && $table_index !== FALSE && $table_index < $tr_index) {
             array_push($tag_stack, $tag);
             $result = $result . '<' . $tag . '>';
           } else {
             $result = $result . '[' . $buffer . ']';
           }
+        } elseif ($tag === 'a') {
+//TODO: url parsing mode
+        } elseif ($tag === 'img') {
+//TODO: img parsing mode
+        } elseif ($tag === 'pre') {
+          array_push($tag_stack, 'pre');
+          $result .= '<pre>';
+//TODO: code parsing mode
         } else {
           // Unrecognized tag!
           $result = $result . '[' . $buffer . ']';
         }
         $mode = 0;
-      } elseif (preg_match('/[A-Za-z0-9= *-]/u', $ch)) {
-        // Tag continues
+      } elseif ($ch === '=') {
+        // arguments following a tag name
+        //  this is only allowed for URL tags or font shorthands
+        $tag = strtolower($buffer);
+        if (isset($alias[$tag])) {
+          $tag = $alias[$tag];
+        }
+
+        if ($tag === 'a') {
+//TODO: url parsing mode
+        } elseif ($tag === 'color') {
+//TODO: color parsing mode
+        } elseif ($tag === 'size') {
+//TODO: size parsing mode
+        } else {
+          // Unrecognized tag!
+          $result = $result . '[' . $buffer . '=';
+          $mode = 0;
+        }
+      } elseif ($ch === ' ') {
+        // arguments following a tag name, go into args capture mode
+        //  this is for FONT tag
+        $tag = strtolower($buffer);
+        if (isset($alias[$tag])) {
+          $tag = $alias[$tag];
+        }
+
+        if ($tag === 'font') {
+//TODO: size parsing mode
+        } else {
+          // Unrecognized tag!
+          $result = $result . '[' . $buffer . ' ';
+          $mode = 0;
+        }
+      } elseif (preg_match('/[A-Za-z]/u', $ch)) {
+        // Tag continues, maybe
         $buffer .= $ch;
       } else {
         // Illegal character in tag, just print everything we have so far and return
@@ -169,10 +186,9 @@ function bbcode_to_html($input) : string
         $result = $result . '[/' . $buffer . $ch;
         $mode = 0;
       }
-    } elseif ($mode === 4) {
-//TODO: CODE tag and IMAGE tag and URL tag and...
     } else {
-      $mode = 0;
+      //$mode = 0;
+      throw new Exception("bbcode_to_html: reached invalid mode $mode");
     }
   }
 

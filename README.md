@@ -2,16 +2,16 @@
 BBCode to HTML conversion, in PHP7.
 
 ## What is it?
-This is a PHP include that can convert BBcode into safe HTML output.
+This is a PHP include that can convert BBCode into safe HTML output.
 
 Features:
 * UTF-8 aware
-* Replaces unsafe HTML characters (`<`, `>`, `&`) with safe HTML entities
+* Replaces unsafe HTML characters (`<`, `>`, `&`) with safe HTML entities (`&lt;`, `&gt;`, `&amp;`)
 * Not regex-based: uses a char-at-a-time state machine parser to properly close tags and avoid malformed HTML
 * Public-domain (The Unlicense), just copy-paste into your own projects!
 
 ## What does it support?
-These BBcode tags are supported and converted to HTML equivalent:
+These BBCode tags are supported and converted to HTML equivalent:
 
 * `[[` (escapes to `[`)
 * `[b]`, `[i]`, `[u]`, `[s]`, `[sub]`, `[sup]`
@@ -25,7 +25,7 @@ These BBcode tags are supported and converted to HTML equivalent:
 
 In addition, unsafe HTML characters are converted to safe HTML entities.  Newlines are collapsed and translated as follows:
 
-* `\r` characters are stripped.
+* `\r` characters are stripped
 * Single `\n`: converted to `\n<br>`
 * Two or more sequential `\n`: converted to `\n\n<p>`
 
