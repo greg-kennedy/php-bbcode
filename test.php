@@ -47,11 +47,12 @@ test('Get the latest php-bbcode release here: [url]https://github.com/greg-kenne
 // URL tests: complex
 test('Get the latest php-bbcode release [url=https://github.com/greg-kennedy/php-bbcode]here[/url].', 'Get the latest php-bbcode release <a href="https://github.com/greg-kennedy/php-bbcode">here</a>.');
 
-
 // Unclosed tag
 test('[b]test', '<b>test</b>');
 // Unterminated tag
 test('[btest', '[btest');
+// Sneaking in an HTML tag?
+test('[b<a href="https://google.com?q=example[b>Ha, gotcha?[a]', '[b&lt;a href="https://google.com?q=example[b&gt;Ha, gotcha?[a]');
 // Unordered tag
 test('Here is [b]bold and [i]italics[/b][/i] text.', 'Here is <b>bold and <i>italics</i></b>[/i] text.');
 // Mismatched aliased tag

@@ -21,16 +21,17 @@ const _BBCODE_STATE_OPENING_BRACKET = 1;
 const _BBCODE_STATE_OPENING_TAG = 2;
 const _BBCODE_STATE_OPENING_TAG_ARGS = 3;
 
-const _BBCODE_STATE_CLOSING_TAG = 6;
+const _BBCODE_STATE_CLOSING_TAG = 4;
 
 // Plaintext parsing (disables newline handling, disables further tag nesting)
-const _BBCODE_STATE_RAW = 7;
-const _BBCODE_STATE_RAW_BRACKET = 8;
-const _BBCODE_STATE_RAW_TAG = 9;
+const _BBCODE_STATE_RAW = 5;
+const _BBCODE_STATE_RAW_BRACKET = 6;
+const _BBCODE_STATE_RAW_TAG = 7;
 
+// URL parsing modes
+const _BBCODE_STATE_URL = 8;
 //const _BBCODE_STATE_RAW_TAG = 10;
 
-//const _BBCODE_STATE_URL = 5;
 
 
   // Tag aliases.  Item on left translates to item on right.
@@ -51,6 +52,24 @@ function _bbcode_tag($input) : string
   return $tag;
 }
 
+// helper function: normalize HTML entities
+function _bbcode_entity($ch) : string
+{
+  if ($ch === '<') {
+    return '&lt;';
+  }
+  if ($ch === '>') {
+    return '&gt;';
+  }
+  if ($ch === '&') {
+    return '&amp;';
+  }
+  if ($ch === "\u{00A0}") {
+    return '&nbsp;';
+  }
+  return $ch;
+}
+
 // Renders a BBCode string to HTML, for inclusion into a document.
 function bbcode_to_html($input) : string
 {
@@ -69,22 +88,15 @@ function bbcode_to_html($input) : string
   foreach ($characters as $ch)
   {
 // TODO: newline handling
+
+    /////////////////////////////////////////////////////////////
+    // NORMAL STATE
     if ($state === _BBCODE_STATE_DEFAULT) {
-      // normal parsing mode
       if ($ch === '[') {
         // open square bracket switches to tag-parse mode
         $state = _BBCODE_STATE_OPENING_BRACKET;
-      } elseif ($ch === '<') {
-        // HTML entities
-        $result .= '&lt;';
-      } elseif ($ch === '>') {
-        $result .= '&gt;';
-      } elseif ($ch === '&') {
-        $result .= '&amp;';
-      } elseif ($ch === "\u{00A0}") {
-        $result .= '&nbsp;';
       } else {
-        $result .= $ch;
+        $result .= _bbcode_entity($ch);
       }
     } elseif ($state === _BBCODE_STATE_OPENING_BRACKET) {
       // mode 1 is after seeing an opening square brace
@@ -96,13 +108,13 @@ function bbcode_to_html($input) : string
         // [/ begins a closing tag instead
         $buffer = '';
         $state = _BBCODE_STATE_CLOSING_TAG;
-      } elseif (preg_match('/[A-Za-z*]/', $ch)) {
+      } elseif (preg_match('/[A-Za-z*]/u', $ch)) {
         // does this look like the start of a tag...?
         $buffer = $ch;
         $state = _BBCODE_STATE_OPENING_TAG;
       } else {
         // doesn't look like a tag, unparse and move on
-        $result = $result . '[' . $ch;
+        $result = $result . '[' . _bbcode_entity($ch);
         $state = _BBCODE_STATE_DEFAULT;
       }
     } elseif ($state === _BBCODE_STATE_OPENING_TAG) {
@@ -154,9 +166,11 @@ function bbcode_to_html($input) : string
           array_push($tag_stack, 'pre');
           $result .= '<pre>';
           $state = _BBCODE_STATE_RAW;
-        } elseif ($tag === 'a' || $tag === 'img') {
+        } elseif ($tag === 'a') {
           // These options place the reader into "exclusive" mode, which prevents
           //  further nesting of tags until this one is closed.
+          $mode = _BBCODE_STATE_URL;
+        } elseif ($tag === 'img') {
         } else {
           // Unrecognized tag!
           $result = $result . '[' . $buffer . ']';
@@ -197,7 +211,7 @@ function bbcode_to_html($input) : string
         $buffer .= $ch;
       } else {
         // Illegal character in tag, just print everything we have so far and return
-        $result = $result . '[' . $buffer . $ch;
+        $result = $result . '[' . $buffer . _bbcode_entity($ch);
         $state = _BBCODE_STATE_DEFAULT;
       }
     } elseif ($state === _BBCODE_STATE_CLOSING_TAG) {
@@ -222,7 +236,7 @@ function bbcode_to_html($input) : string
         $buffer .= $ch;
       } else {
         // Illegal character in tag, just print it and return
-        $result = $result . '[/' . $buffer . $ch;
+        $result = $result . '[/' . $buffer . _bbcode_entity($ch);
         $state = _BBCODE_STATE_DEFAULT;
       }
 
@@ -233,17 +247,8 @@ function bbcode_to_html($input) : string
       if ($ch === '[') {
         // open square bracket switches to tag-parse mode
         $state = _BBCODE_STATE_RAW_BRACKET;
-      } elseif ($ch === '<') {
-        // HTML entities
-        $result .= '&lt;';
-      } elseif ($ch === '>') {
-        $result .= '&gt;';
-      } elseif ($ch === '&') {
-        $result .= '&amp;';
-      } elseif ($ch === "\u{00A0}") {
-        $result .= '&nbsp;';
       } else {
-        $result .= $ch;
+        $result .= _bbcode_entity($ch);
       }
     } elseif ($state === _BBCODE_STATE_RAW_BRACKET) {
       // mode 1 is after seeing an opening square brace
@@ -253,7 +258,7 @@ function bbcode_to_html($input) : string
         $state = _BBCODE_STATE_RAW_TAG;
       } else {
         // doesn't look like a tag, unparse and move on
-        $result = $result . '[' . $ch;
+        $result = $result . '[' . _bbcode_entity($ch);
         $state = _BBCODE_STATE_RAW;
       }
     } elseif ($state === _BBCODE_STATE_RAW_TAG) {
@@ -279,8 +284,24 @@ function bbcode_to_html($input) : string
         $buffer .= $ch;
       } else {
         // Illegal character in tag, just print it and return
-        $result = $result . '[/' . $buffer . $ch;
+        $result = $result . '[/' . $buffer . _bbcode_entity($ch);
         $state = _BBCODE_STATE_RAW;
+      }
+
+    // URL STATE
+    } elseif ($state === _BBCODE_STATE_URL) {
+      // URL mode has only a certain whitelist of characters allowed
+      // ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~:/?#[]@!$&'()*+,;=
+      if ($ch === '[') {
+        // TODO: Square bracket is actually a valid character in URLs,
+        //  but BBCode uses it as a delimiter...
+      } elseif (preg_match("/[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=]/u", $ch)) {
+        // Valid URL character, I guess
+        $buffer .= $ch;
+      } else {
+        // On second thought, this doesn't look like a URL.  Better not paste it.
+        $result = $result . '[' . $buffer . _bbcode_entity($ch);
+        $state = _BBCODE_STATE_DEFAULT;
       }
 
     /////////////////////////////////////////////////////////////
