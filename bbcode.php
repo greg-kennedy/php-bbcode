@@ -13,10 +13,25 @@ This is public domain software.  Please see LICENSE for more details.
 ******************************************************************************/
 
 // Const definitions for mode
+
+// Normal parsing mode
 const _BBCODE_MODE_DEFAULT = 0;
-const _BBCODE_MODE_OPENING_TAG = 1;
-const _BBCODE_MODE_OPENING_TAG_CONT = 2;
-const _BBCODE_MODE_CLOSING_TAG = 3;
+
+const _BBCODE_MODE_OPENING_BRACKET = 1;
+const _BBCODE_MODE_OPENING_TAG = 2;
+const _BBCODE_MODE_OPENING_TAG_ARGS = 3;
+
+const _BBCODE_MODE_CLOSING_TAG = 6;
+
+// Plaintext parsing (disables newline handling, disables further tag nesting)
+const _BBCODE_MODE_RAW = 7;
+const _BBCODE_MODE_RAW_BRACKET = 8;
+const _BBCODE_MODE_RAW__TAG = 9;
+
+//const _BBCODE_MODE_RAW_TAG = 10;
+
+//const _BBCODE_MODE_URL = 5;
+
 
   // Tag aliases.  Item on left translates to item on right.
 const _BBCODE_TAG_ALIAS = [
@@ -26,10 +41,19 @@ const _BBCODE_TAG_ALIAS = [
   '*' => 'li'
 ];
 
+// helper function: normalize a potential "tag"
+function _bbcode_tag($input) : string
+{
+  $tag = strtolower($input);
+  if (isset(_BBCODE_TAG_ALIAS[$tag])) {
+    return _BBCODE_TAG_ALIAS[$tag];
+  }
+  return $tag;
+}
+
 // Renders a BBCode string to HTML, for inclusion into a document.
 function bbcode_to_html($input) : string
 {
-
   // split input string into array using regex, UTF-8 aware
   $characters = preg_split('//u', $input, null, PREG_SPLIT_NO_EMPTY);
 
@@ -38,17 +62,18 @@ function bbcode_to_html($input) : string
 
   // mode defines a parse mode for the parser state machine.
   $mode = _BBCODE_MODE_DEFAULT;
+  // "buffer" is mode-specific storage ("register"?)
   $buffer = '';
   $tag_stack = [];
 
   foreach ($characters as $ch)
   {
 // TODO: newline handling
-    if ($mode === 0) {
-      // mode 0 is outside of any tags
+    if ($mode === _BBCODE_MODE_DEFAULT) {
+      // normal parsing mode
       if ($ch === '[') {
         // open square bracket switches to tag-parse mode
-        $mode = _BBCODE_MODE_OPENING_TAG;
+        $mode = _BBCODE_MODE_OPENING_BRACKET;
       } elseif ($ch === '<') {
         // HTML entities
         $result .= '&lt;';
@@ -56,10 +81,12 @@ function bbcode_to_html($input) : string
         $result .= '&gt;';
       } elseif ($ch === '&') {
         $result .= '&amp;';
+      } elseif ($ch === "\u{00A0}") {
+        $result .= '&nbsp;';
       } else {
         $result .= $ch;
       }
-    } elseif ($mode === _BBCODE_MODE_OPENING_TAG) {
+    } elseif ($mode === _BBCODE_MODE_OPENING_BRACKET) {
       // mode 1 is after seeing an opening square brace
       if ($ch === '[') {
         // escaped bracket
@@ -72,20 +99,17 @@ function bbcode_to_html($input) : string
       } elseif (preg_match('/[A-Za-z*]/', $ch)) {
         // does this look like the start of a tag...?
         $buffer = $ch;
-        $mode = _BBCODE_MODE_OPENING_TAG_CONT;
+        $mode = _BBCODE_MODE_OPENING_TAG;
       } else {
         // doesn't look like a tag, unparse and move on
         $result = $result . '[' . $ch;
         $mode = _BBCODE_MODE_DEFAULT;
       }
-    } elseif ($mode === _BBCODE_MODE_OPENING_TAG_CONT) {
+    } elseif ($mode === _BBCODE_MODE_OPENING_TAG) {
       // mode 2 is within a square brace, but no equals or space (yet)
       if ($ch === ']') {
         // End square brace of opening tag
-        $tag = strtolower($buffer);
-        if (isset(_BBCODE_TAG_ALIAS[$tag])) {
-          $tag = _BBCODE_TAG_ALIAS[$tag];
-        }
+        $tag = _bbcode_tag($buffer);
 
         // Simple tags (no validation or alternate modes)
         if ($tag === 'b' || $tag === 'i' || $tag === 'u' || $tag === 's' || $tag === 'sup' || $tag === 'sub' ||
@@ -94,6 +118,7 @@ function bbcode_to_html($input) : string
             $tag === 'table') {
           array_push($tag_stack, $tag);
           $result = $result . '<' . $tag . '>';
+          $mode = _BBCODE_MODE_DEFAULT;
         } elseif ($tag === 'li') {
           // Disallow [li] outside of [ol] or [ul]
           if (array_search('ol', $tag_stack, TRUE) !== FALSE ||
@@ -103,6 +128,7 @@ function bbcode_to_html($input) : string
           } else {
             $result = $result . '[' . $buffer . ']';
           }
+          $mode = _BBCODE_MODE_DEFAULT;
         } elseif ($tag === 'tr') {
           // Disallow [tr] outside of [table]
           if (array_search('table', $tag_stack, TRUE) !== FALSE) {
@@ -111,6 +137,7 @@ function bbcode_to_html($input) : string
           } else {
             $result = $result . '[' . $buffer . ']';
           }
+          $mode = _BBCODE_MODE_DEFAULT;
         } elseif ($tag === 'td' || $tag === 'th') {
           // Disallow [th] / [td] outside of [tr] outside of [table]
           $tr_index = array_search('tr', $tag_stack, TRUE);
@@ -121,26 +148,24 @@ function bbcode_to_html($input) : string
           } else {
             $result = $result . '[' . $buffer . ']';
           }
-        } elseif ($tag === 'a') {
-//TODO: url parsing mode
-        } elseif ($tag === 'img') {
-//TODO: img parsing mode
+          $mode = _BBCODE_MODE_DEFAULT;
         } elseif ($tag === 'pre') {
+          // [pre] / [code] put us into RAW mode, where nothing is parsed except a close tag
           array_push($tag_stack, 'pre');
           $result .= '<pre>';
-//TODO: code parsing mode
+          $mode = _BBCODE_MODE_RAW;
+        } elseif ($tag === 'a' || $tag === 'img') {
+          // These options place the reader into "exclusive" mode, which prevents
+          //  further nesting of tags until this one is closed.
         } else {
           // Unrecognized tag!
           $result = $result . '[' . $buffer . ']';
+          $mode = _BBCODE_MODE_DEFAULT;
         }
-        $mode = _BBCODE_MODE_DEFAULT;
       } elseif ($ch === '=') {
         // arguments following a tag name
         //  this is only allowed for URL tags or font shorthands
-        $tag = strtolower($buffer);
-        if (isset(_BBCODE_TAG_ALIAS[$tag])) {
-          $tag = _BBCODE_TAG_ALIAS[$tag];
-        }
+        $tag = _bbcode_tag($buffer);
 
         if ($tag === 'a') {
 //TODO: url parsing mode
@@ -156,10 +181,7 @@ function bbcode_to_html($input) : string
       } elseif ($ch === ' ') {
         // arguments following a tag name, go into args capture mode
         //  this is for FONT tag
-        $tag = strtolower($buffer);
-        if (isset(_BBCODE_TAG_ALIAS[$tag])) {
-          $tag = _BBCODE_TAG_ALIAS[$tag];
-        }
+        $tag = _bbcode_tag($buffer);
 
         if ($tag === 'font') {
 //TODO: font parsing mode
@@ -182,11 +204,7 @@ function bbcode_to_html($input) : string
       // mode 3 is within a closing tag
       if ($ch === ']') {
         // Tag end
-        $tag = strtolower($buffer);
-        // tag aliases
-        if (isset(_BBCODE_TAG_ALIAS[$tag])) {
-          $tag = _BBCODE_TAG_ALIAS[$tag];
-        }
+        $tag = _bbcode_tag($buffer);
 
         if (array_search($buffer, $tag_stack, TRUE) === FALSE) {
           // Attempted to close a tag that was not on the stack!
@@ -207,6 +225,66 @@ function bbcode_to_html($input) : string
         $result = $result . '[/' . $buffer . $ch;
         $mode = _BBCODE_MODE_DEFAULT;
       }
+
+    /////////////////////////////////////////////////////////////
+    // RAW MODE
+    } elseif ($mode === _BBCODE_MODE_RAW) {
+      // RAW parsing mode disables nesting and newline conversion
+      if ($ch === '[') {
+        // open square bracket switches to tag-parse mode
+        $mode = _BBCODE_MODE_RAW_BRACKET;
+      } elseif ($ch === '<') {
+        // HTML entities
+        $result .= '&lt;';
+      } elseif ($ch === '>') {
+        $result .= '&gt;';
+      } elseif ($ch === '&') {
+        $result .= '&amp;';
+      } elseif ($ch === "\u{00A0}") {
+        $result .= '&nbsp;';
+      } else {
+        $result .= $ch;
+      }
+    } elseif ($mode === _BBCODE_MODE_RAW_BRACKET) {
+      // mode 1 is after seeing an opening square brace
+      if ($ch === '/') {
+        // [/ begins a closing tag instead
+        $buffer = '';
+        $mode = _BBCODE_MODE_RAW__TAG;
+      } else {
+        // doesn't look like a tag, unparse and move on
+        $result = $result . '[' . $ch;
+        $mode = _BBCODE_MODE_RAW;
+      }
+    } elseif ($mode === _BBCODE_MODE_RAW__TAG) {
+      // mode 3 is within a closing tag
+      if ($ch === ']') {
+        // Tag end
+        $tag = _bbcode_tag($buffer);
+
+        // Pop the last tag for compare
+        $popped_tag = array_pop($tag_stack);
+        if ($tag === $popped_tag) {
+          // finally, complete
+          $result = $result . '</' . $popped_tag . '>';
+          $mode = _BBCODE_MODE_DEFAULT;
+        } else {
+          // cripes, that's not it, put it back
+          array_push($tag_stack, $popped_tag);
+          $result = $result . '[/' . $buffer . ']';
+        }
+        $buffer = '';
+      } elseif (preg_match('/[A-Za-z*]/u', $ch)) {
+        // Closing-tag continues
+        $buffer .= $ch;
+      } else {
+        // Illegal character in tag, just print it and return
+        $result = $result . '[/' . $buffer . $ch;
+        $mode = _BBCODE_MODE_RAW;
+      }
+
+    /////////////////////////////////////////////////////////////
+    // ERROR MODE
     } else {
       //$mode = 0;
       throw new Exception("bbcode_to_html: reached invalid mode $mode");
