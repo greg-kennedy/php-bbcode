@@ -32,6 +32,8 @@ function test($a, $b)
 test('test', 'test');
 // HTML escaping
 test('<b>test</b>', '&lt;b&gt;test&lt;/b&gt;');
+// Unicode
+test('Emoji is great 😀 Surrender to your Emoji overlords 💩', 'Emoji is great 😀 Surrender to your Emoji overlords 💩');
 
 // Bold text
 test('[b]test[/b]', '<b>test</b>');
@@ -46,6 +48,8 @@ test('Some BBCode tips: [code][u] - underline. [b] - bold.[/code]', 'Some BBCode
 test('Get the latest php-bbcode release here: [url]https://github.com/greg-kennedy/php-bbcode[/url]', 'Get the latest php-bbcode release here: <a href="https://github.com/greg-kennedy/php-bbcode">https://github.com/greg-kennedy/php-bbcode</a>');
 // URL tests: complex
 test('Get the latest php-bbcode release [url=https://github.com/greg-kennedy/php-bbcode]here[/url].', 'Get the latest php-bbcode release <a href="https://github.com/greg-kennedy/php-bbcode">here</a>.');
+// IMG test
+test('Check out this image: [img]http://www.example.com/image.jpg[/img]', 'Check out this image: <img src="http://www.example.com/image.jpg">');
 
 // Unclosed tag
 test('[b]test', '<b>test</b>');

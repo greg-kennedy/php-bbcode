@@ -30,11 +30,11 @@ const _BBCODE_STATE_RAW_TAG = 7;
 
 // URL parsing modes
 const _BBCODE_STATE_URL = 8;
-//const _BBCODE_STATE_RAW_TAG = 10;
+const _BBCODE_STATE_URL_BRACKET = 9;
+const _BBCODE_STATE_URL_TAG = 10;
 
 
-
-  // Tag aliases.  Item on left translates to item on right.
+// Tag aliases.  Item on left translates to item on right.
 const _BBCODE_TAG_ALIAS = [
   'url' => 'a',
   'code' => 'pre',
@@ -83,11 +83,15 @@ function bbcode_to_html($input) : string
   $state = _BBCODE_STATE_DEFAULT;
   // "buffer" is mode-specific storage ("register"?)
   $buffer = '';
+  // url variable
+  $url = '';
   $tag_stack = [];
 
   foreach ($characters as $ch)
   {
 // TODO: newline handling
+
+//echo "now seeing '$ch' (state: $state)\n";
 
     /////////////////////////////////////////////////////////////
     // NORMAL STATE
@@ -166,11 +170,12 @@ function bbcode_to_html($input) : string
           array_push($tag_stack, 'pre');
           $result .= '<pre>';
           $state = _BBCODE_STATE_RAW;
-        } elseif ($tag === 'a') {
+        } elseif ($tag === 'a' || $tag === 'img') {
           // These options place the reader into "exclusive" mode, which prevents
           //  further nesting of tags until this one is closed.
-          $mode = _BBCODE_STATE_URL;
-        } elseif ($tag === 'img') {
+          array_push($tag_stack, $tag);
+          $url = '';
+          $state = _BBCODE_STATE_URL;
         } else {
           // Unrecognized tag!
           $result = $result . '[' . $buffer . ']';
@@ -182,7 +187,7 @@ function bbcode_to_html($input) : string
         $tag = _bbcode_tag($buffer);
 
         if ($tag === 'a') {
-//TODO: url parsing mode
+//TODO: url parsing mode IN A TAG
         } elseif ($tag === 'color') {
 //TODO: color parsing mode
         } elseif ($tag === 'size') {
@@ -294,14 +299,60 @@ function bbcode_to_html($input) : string
       // ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~:/?#[]@!$&'()*+,;=
       if ($ch === '[') {
         // TODO: Square bracket is actually a valid character in URLs,
-        //  but BBCode uses it as a delimiter...
-      } elseif (preg_match("/[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=]/u", $ch)) {
+        //  but BBCode uses it as a delimiter... use %5D instead
+        $state = _BBCODE_STATE_URL_BRACKET;
+      } elseif (preg_match("/[A-Za-z0-9\-._~:\/?#\]@!$&'()*+,;=%]/u", $ch)) {
         // Valid URL character, I guess
-        $buffer .= $ch;
+        $url .= $ch;
       } else {
         // On second thought, this doesn't look like a URL.  Better not paste it.
-        $result = $result . '[' . $buffer . _bbcode_entity($ch);
+        //  TODO: this is unsafe as $url is not escaped!!
+        $result = $result . '[' . $buffer . ']' . $url . _bbcode_entity($ch);
         $state = _BBCODE_STATE_DEFAULT;
+      }
+    } elseif ($state === _BBCODE_STATE_URL_BRACKET) {
+      // mode 1 is after seeing an opening square brace
+      if ($ch === '/') {
+        // [/ begins a closing tag instead
+        $buffer = '';
+        $state = _BBCODE_STATE_URL_TAG;
+      } else {
+        // doesn't look like a tag, unparse and move on
+        $result = $result . '[' . _bbcode_entity($ch);
+        $state = _BBCODE_STATE_URL;
+      }
+    } elseif ($state === _BBCODE_STATE_URL_TAG) {
+      // mode 3 is within a closing tag
+      if ($ch === ']') {
+        // Tag end
+        $tag = _bbcode_tag($buffer);
+
+        // Pop the last tag for compare
+        $popped_tag = array_pop($tag_stack);
+        if ($tag === $popped_tag) {
+          // finally, complete
+          if ($tag === 'a') {
+            $result = $result . '<a href="' . $url . '">' . $url . '</a>';
+            $state = _BBCODE_STATE_DEFAULT;
+          } elseif ($tag === 'img') {
+            $result = $result . '<img src="' . $url . '">';
+            $state = _BBCODE_STATE_DEFAULT;
+          } else {
+            throw new Exception("bbcode_to_html: Parsed a URL, but don't know how to output one for $tag...");
+          }
+        } else {
+          // cripes, that's not it, put it back
+          array_push($tag_stack, $popped_tag);
+          $result = $result . '[/' . $buffer . ']';
+        }
+        $buffer = '';
+      } elseif (preg_match('/[A-Za-z*]/u', $ch)) {
+        // Closing-tag continues
+        $buffer .= $ch;
+      } else {
+        // Illegal character in tag, just print it and return
+        $result = $result . '[/' . $buffer . _bbcode_entity($ch);
+        $state = _BBCODE_STATE_RAW;
       }
 
     /////////////////////////////////////////////////////////////
