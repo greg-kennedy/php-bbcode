@@ -7,13 +7,12 @@ This is a PHP include that can convert BBCode into safe HTML output.
 Features:
 * UTF-8 aware
 * Replaces unsafe HTML characters (`<`, `>`, `&`, ` `) with safe HTML entities (`&lt;`, `&gt;`, `&amp;`, `&nbsp;`)
-* Not regex-based: uses a char-at-a-time state machine parser to properly close tags and avoid malformed HTML
+* Properly handles various bad input conditions, to ensure correcly closed tags and avoid malformed HTML
 * Public-domain (The Unlicense), just copy-paste into your own projects!
 
 ## What does it support?
 These BBCode tags are supported and converted to HTML equivalent:
 
-* `[[` (escapes to `[`)
 * `[b]`, `[i]`, `[u]`, `[s]`, `[sub]`, `[sup]`
 * `[color=X]`, `[size=Y]`, `[font color=X size=Y]`
 * `[quote]` / `[blockquote]`

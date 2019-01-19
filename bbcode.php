@@ -14,28 +14,6 @@ This is public domain software.  Please see LICENSE for more details.
 
 class BBCode
 {
-  // Const definitions for mode
-
-  // Normal parsing mode
-  const STATE_DEFAULT = 0;
-
-  const STATE_OPENING_BRACKET = 1;
-  const STATE_OPENING_TAG = 2;
-  const STATE_OPENING_TAG_ARGS = 3;
-
-  const STATE_CLOSING_TAG = 4;
-
-  // Plaintext parsing (disables newline handling, disables further tag nesting)
-  const STATE_RAW = 5;
-  const STATE_RAW_BRACKET = 6;
-  const STATE_RAW_TAG = 7;
-
-  // URL parsing modes
-  const STATE_URL = 8;
-  const STATE_URL_BRACKET = 9;
-  const STATE_URL_TAG = 10;
-
-
   // Tag aliases.  Item on left translates to item on right.
   const TAG_ALIAS = [
     'url' => 'a',
@@ -45,7 +23,7 @@ class BBCode
   ];
 
   // helper function: normalize a potential "tag"
-  static private function tag($input) : string
+  static private function normalize($input) : string
   {
     $tag = strtolower($input);
     if (isset(self::TAG_ALIAS[$tag])) {
@@ -54,327 +32,253 @@ class BBCode
     return $tag;
   }
 
-  // helper function: normalize HTML entities
-  static private function entity($ch) : string
+  // helper function: normalize HTML entities, with newline handling
+  static private function encode($input) : string
   {
-    if ($ch === '<') {
-      return '&lt;';
+    // break substring into individual unicode chars
+    $characters = preg_split('//u', $input, null, PREG_SPLIT_NO_EMPTY);
+
+    // append each one-at-a-time to create output
+    $lf = 0;
+    $output = '';
+    foreach ($characters as &$ch)
+    {
+      if ($ch === "\n") {
+        $lf ++;
+      } elseif ($ch === "\r") {
+        continue;
+      } else {
+        if ($lf === 1) {
+          $output .= "\n<br>";
+          $lf = 0;
+        } elseif ($lf > 1) {
+          $output .= "\n\n<p>";
+          $lf = 0;
+        }
+
+        if ($ch === '<') {
+          $output .= '&lt;';
+        } elseif ($ch === '>') {
+          $output .= '&gt;';
+        } elseif ($ch === '&') {
+          $output .= '&amp;';
+        } elseif ($ch === "\u{00A0}") {
+          $output .= '&nbsp;';
+        } else {
+          $output .= $ch;
+        }
+      }
     }
-    if ($ch === '>') {
-      return '&gt;';
+
+    // trailing linefeed handle
+    if ($lf === 1) {
+      $output .= "\n<br>";
+    } elseif ($lf > 1) {
+      $output .= "\n\n<p>";
     }
-    if ($ch === '&') {
-      return '&amp;';
-    }
-    if ($ch === "\u{00A0}") {
-      return '&nbsp;';
-    }
-    return $ch;
+
+    return $output;
   }
 
   // Renders a BBCode string to HTML, for inclusion into a document.
   static public function bbcode_to_html($input) : string
   {
     // split input string into array using regex, UTF-8 aware
-    $characters = preg_split('//u', $input, null, PREG_SPLIT_NO_EMPTY);
+    //  this should give us tokens to work with
+
+    // The regex is just any printable ASCII char, excluding square brackets,
+    //  and enclosed within square brackets.
+    $match_count = preg_match_all('/\[[\x20-\x5a\x5c\x5e-\x7e]+\]/u',
+      $input, $matches, PREG_OFFSET_CAPTURE);
+    if ($match_count === FALSE) {
+      throw new RuntimeException('Fatal error in preg_match_all for BBCode tags');
+    }
 
     // begin with the empty string
-    $result = '';
+    $output = '';
+    $input_ptr = 0;
 
-    // mode defines a parse mode for the parser state machine.
-    $state = self::STATE_DEFAULT;
-    // "buffer" is mode-specific storage ("register"?)
-    $buffer = '';
-    // url variable
-    $url = '';
     $stack = [];
-
-    foreach ($characters as $ch)
+    for ($match_idx = 0; $match_idx < $match_count; $match_idx ++)
     {
-  // TODO: newline handling
+      list($tag, $offset) = $matches[0][$match_idx];
 
-  //echo "now seeing '$ch' (state: $state)\n";
+      // pick up chars between tags and HTML-encode them
+      $output .= self::encode(substr($input, $input_ptr, $offset - $input_ptr));
 
-      /////////////////////////////////////////////////////////////
-      // NORMAL STATE
-      if ($state === self::STATE_DEFAULT) {
-        if ($ch === '[') {
-          // open square bracket switches to tag-parse mode
-          $state = self::STATE_OPENING_BRACKET;
+      // advance input_ptr to just past the current tag
+      $input_ptr = $offset + strlen($tag);
+
+      if ($tag[1] === '/') {
+        // CLOSING TAG
+        //   get "standardized" tag name
+        $type = self::normalize(substr($tag, 2, -1));
+
+        if (array_search($type, $stack, TRUE) === FALSE) {
+          // Attempted to close a tag that was not on the stack!
+          $output = $output . $tag;
         } else {
-          $result .= self::entity($ch);
+          //pop repeatedly until we pop the tag, and close everything on the way
+          do {
+            $popped_type = array_pop($stack);
+            $output = $output . '</' . $popped_type . '>';
+          } while ($type !== $popped_type);
         }
-      } elseif ($state === self::STATE_OPENING_BRACKET) {
-        // mode 1 is after seeing an opening square brace
-        if ($ch === '[') {
-          // escaped bracket
-          $result .= '[';
-          $state = self::STATE_DEFAULT;
-        } elseif ($ch === '/') {
-          // [/ begins a closing tag instead
-          $buffer = '';
-          $state = self::STATE_CLOSING_TAG;
-        } elseif (preg_match('/[A-Za-z*]/u', $ch)) {
-          // does this look like the start of a tag...?
-          $buffer = $ch;
-          $state = self::STATE_OPENING_TAG;
-        } else {
-          // doesn't look like a tag, unparse and move on
-          $result = $result . '[' . self::entity($ch);
-          $state = self::STATE_DEFAULT;
-        }
-      } elseif ($state === self::STATE_OPENING_TAG) {
-        // mode 2 is within a square brace, but no equals or space (yet)
-        if ($ch === ']') {
-          // End square brace of opening tag
-          $tag = self::tag($buffer);
-
-          // Simple tags (no validation or alternate modes)
-          if ($tag === 'b' || $tag === 'i' || $tag === 'u' || $tag === 's' || $tag === 'sup' || $tag === 'sub' ||
-              $tag === 'blockquote' ||
-              $tag === 'ol' || $tag === 'ul' ||
-              $tag === 'table') {
-            array_push($stack, $tag);
-            $result = $result . '<' . $tag . '>';
-            $state = self::STATE_DEFAULT;
-          } elseif ($tag === 'li') {
-            // Disallow [li] outside of [ol] or [ul]
-            if (array_search('ol', $stack, TRUE) !== FALSE ||
-                array_search('ul', $stack, TRUE) !== FALSE) {
-              array_push($stack, 'li');
-              $result .= '<li>';
-            } else {
-              $result = $result . '[' . $buffer . ']';
-            }
-            $state = self::STATE_DEFAULT;
-          } elseif ($tag === 'tr') {
-            // Disallow [tr] outside of [table]
-            if (array_search('table', $stack, TRUE) !== FALSE) {
-              array_push($stack, 'tr');
-              $result .= '<tr>';
-            } else {
-              $result = $result . '[' . $buffer . ']';
-            }
-            $state = self::STATE_DEFAULT;
-          } elseif ($tag === 'td' || $tag === 'th') {
-            // Disallow [th] / [td] outside of [tr] outside of [table]
-            $tr_index = array_search('tr', $stack, TRUE);
-            $table_index = array_search('table', $stack, TRUE);
-            if ($tr_index !== FALSE && $table_index !== FALSE && $table_index < $tr_index) {
-              array_push($stack, $tag);
-              $result = $result . '<' . $tag . '>';
-            } else {
-              $result = $result . '[' . $buffer . ']';
-            }
-            $state = self::STATE_DEFAULT;
-          } elseif ($tag === 'pre') {
-            // [pre] / [code] put us into RAW mode, where nothing is parsed except a close tag
-            array_push($stack, 'pre');
-            $result .= '<pre>';
-            $state = self::STATE_RAW;
-          } elseif ($tag === 'a' || $tag === 'img') {
-            // These options place the reader into "exclusive" mode, which prevents
-            //  further nesting of tags until this one is closed.
-            array_push($stack, $tag);
-            $url = '';
-            $state = self::STATE_URL;
-          } else {
-            // Unrecognized tag!
-            $result = $result . '[' . $buffer . ']';
-            $state = self::STATE_DEFAULT;
-          }
-        } elseif ($ch === '=') {
-          // arguments following a tag name
-          //  this is only allowed for URL tags or font shorthands
-          $tag = self::tag($buffer);
-
-          if ($tag === 'a') {
-  //TODO: url parsing mode IN A TAG
-          } elseif ($tag === 'color') {
-  //TODO: color parsing mode
-          } elseif ($tag === 'size') {
-  //TODO: size parsing mode
-          } else {
-            // Unrecognized tag!
-            $result = $result . '[' . $buffer . '=';
-            $state = self::STATE_DEFAULT;
-          }
-        } elseif ($ch === ' ') {
-          // arguments following a tag name, go into args capture mode
-          //  this is for FONT tag
-          $tag = self::tag($buffer);
-
-          if ($tag === 'font') {
-  //TODO: font parsing mode
-          } elseif ($tag === 'img') {
-  //TODO: image display options
-          } else {
-            // Unrecognized tag!
-            $result = $result . '[' . $buffer . ' ';
-            $state = self::STATE_DEFAULT;
-          }
-        } elseif (preg_match('/[A-Za-z]/u', $ch)) {
-          // Tag continues, maybe
-          $buffer .= $ch;
-        } else {
-          // Illegal character in tag, just print everything we have so far and return
-          $result = $result . '[' . $buffer . self::entity($ch);
-          $state = self::STATE_DEFAULT;
-        }
-      } elseif ($state === self::STATE_CLOSING_TAG) {
-        // mode 3 is within a closing tag
-        if ($ch === ']') {
-          // Tag end
-          $tag = self::tag($buffer);
-
-          if (array_search($buffer, $stack, TRUE) === FALSE) {
-            // Attempted to close a tag that was not on the stack!
-            $result = $result . '[/' . $buffer . ']';
-          } else {
-            //pop repeatedly until we pop the tag, and close everything on the way
-            do {
-              $popped_tag = array_pop($stack);
-              $result = $result . '</' . $popped_tag . '>';
-            } while ($tag !== $popped_tag);
-          }
-          $state = self::STATE_DEFAULT;
-        } elseif (preg_match('/[A-Za-z*]/u', $ch)) {
-          // Closing-tag continues
-          $buffer .= $ch;
-        } else {
-          // Illegal character in tag, just print it and return
-          $result = $result . '[/' . $buffer . self::entity($ch);
-          $state = self::STATE_DEFAULT;
-        }
-
-      /////////////////////////////////////////////////////////////
-      // RAW STATE
-      } elseif ($state === self::STATE_RAW) {
-        // RAW parsing mode disables nesting and newline conversion
-        if ($ch === '[') {
-          // open square bracket switches to tag-parse mode
-          $state = self::STATE_RAW_BRACKET;
-        } else {
-          $result .= self::entity($ch);
-        }
-      } elseif ($state === self::STATE_RAW_BRACKET) {
-        // mode 1 is after seeing an opening square brace
-        if ($ch === '/') {
-          // [/ begins a closing tag instead
-          $buffer = '';
-          $state = self::STATE_RAW_TAG;
-        } else {
-          // doesn't look like a tag, unparse and move on
-          $result = $result . '[' . self::entity($ch);
-          $state = self::STATE_RAW;
-        }
-      } elseif ($state === self::STATE_RAW_TAG) {
-        // mode 3 is within a closing tag
-        if ($ch === ']') {
-          // Tag end
-          $tag = self::tag($buffer);
-
-          // Pop the last tag for compare
-          $popped_tag = array_pop($stack);
-          if ($tag === $popped_tag) {
-            // finally, complete
-            $result = $result . '</' . $popped_tag . '>';
-            $state = self::STATE_DEFAULT;
-          } else {
-            // cripes, that's not it, put it back
-            array_push($stack, $popped_tag);
-            $result = $result . '[/' . $buffer . ']';
-          }
-          $buffer = '';
-        } elseif (preg_match('/[A-Za-z*]/u', $ch)) {
-          // Closing-tag continues
-          $buffer .= $ch;
-        } else {
-          // Illegal character in tag, just print it and return
-          $result = $result . '[/' . $buffer . self::entity($ch);
-          $state = self::STATE_RAW;
-        }
-
-      // URL STATE
-      } elseif ($state === self::STATE_URL) {
-        // URL mode has only a certain whitelist of characters allowed
-        // ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~:/?#[]@!$&'()*+,;=
-        if ($ch === '[') {
-          // TODO: Square bracket is actually a valid character in URLs,
-          //  but BBCode uses it as a delimiter... use %5D instead
-          $state = self::STATE_URL_BRACKET;
-        } elseif (preg_match("/[A-Za-z0-9\-._~:\/?#\]@!$&'()*+,;=%]/u", $ch)) {
-          // Valid URL character, I guess
-          $url .= $ch;
-        } else {
-          // On second thought, this doesn't look like a URL.  Better not paste it.
-          //  TODO: this is unsafe as $url is not escaped!!
-          $result = $result . '[' . $buffer . ']' . $url . self::entity($ch);
-          $state = self::STATE_DEFAULT;
-        }
-      } elseif ($state === self::STATE_URL_BRACKET) {
-        // mode 1 is after seeing an opening square brace
-        if ($ch === '/') {
-          // [/ begins a closing tag instead
-          $buffer = '';
-          $state = self::STATE_URL_TAG;
-        } else {
-          // doesn't look like a tag, unparse and move on
-          $result = $result . '[' . self::entity($ch);
-          $state = self::STATE_URL;
-        }
-      } elseif ($state === self::STATE_URL_TAG) {
-        // mode 3 is within a closing tag
-        if ($ch === ']') {
-          // Tag end
-          $tag = self::tag($buffer);
-
-          // Pop the last tag for compare
-          $popped_tag = array_pop($stack);
-          if ($tag === $popped_tag) {
-            // finally, complete
-            if ($tag === 'a') {
-              $result = $result . '<a href="' . $url . '">' . $url . '</a>';
-              $state = self::STATE_DEFAULT;
-            } elseif ($tag === 'img') {
-              $result = $result . '<img src="' . $url . '">';
-              $state = self::STATE_DEFAULT;
-            } else {
-              throw new Exception("bbcode_to_html: Parsed a URL, but don't know how to output one for $tag...");
-            }
-          } else {
-            // cripes, that's not it, put it back
-            array_push($stack, $popped_tag);
-            $result = $result . '[/' . $buffer . ']';
-          }
-          $buffer = '';
-        } elseif (preg_match('/[A-Za-z*]/u', $ch)) {
-          // Closing-tag continues
-          $buffer .= $ch;
-        } else {
-          // Illegal character in tag, just print it and return
-          $result = $result . '[/' . $buffer . self::entity($ch);
-          $state = self::STATE_RAW;
-        }
-
-      /////////////////////////////////////////////////////////////
-      // ERROR STATE
       } else {
-        //$state = 0;
-        throw new Exception("bbcode_to_html: reached invalid mode $state");
+        // Opening tag?
+
+        // parse tag into a set of args: first split by spaces,
+        //  then split those by =
+        $params = explode(' ', substr($tag, 1, -1));
+        $args = [];
+        foreach ($params as &$param) {
+          $args[] = explode('=', $param, 2);
+        }
+
+        // determine tag type from first captured arg
+        $type = self::normalize($args[0][0]);
+
+        // Simple tags (no validation or alternate modes)
+        if ($type === 'b' || $type === 'i' || $type === 'u' || $type === 's' || $type === 'sup' || $type === 'sub' ||
+            $type === 'blockquote' ||
+            $type === 'ol' || $type === 'ul' ||
+            $type === 'table') {
+          array_push($stack, $type);
+          $output = $output . '<' . $type . '>';
+        } elseif ($type === 'li') {
+          // Disallow [li] outside of [ol] or [ul]
+          if (array_search('ol', $stack, TRUE) !== FALSE ||
+              array_search('ul', $stack, TRUE) !== FALSE) {
+            array_push($stack, 'li');
+            $output .= '<li>';
+          } else {
+            $output = $output . $tag;
+          }
+        } elseif ($type === 'tr') {
+          // Disallow [tr] outside of [table]
+          if (array_search('table', $stack, TRUE) !== FALSE) {
+            array_push($stack, 'tr');
+            $output .= '<tr>';
+          } else {
+            $output = $output . $tag;
+          }
+        } elseif ($type === 'td' || $type === 'th') {
+          // Disallow [th] / [td] outside of [tr] outside of [table]
+          $tr_index = array_search('tr', $stack, TRUE);
+          $table_index = array_search('table', $stack, TRUE);
+          if ($tr_index !== FALSE && $table_index !== FALSE && $table_index < $tr_index) {
+            array_push($stack, $type);
+            $output = $output . '<' . $type . '>';
+          } else {
+            $output = $output . $tag;
+          }
+
+        // CUSTOM TAG HANDLING
+        } elseif ($type === 'pre') {
+          // [pre] / [code] put us into RAW mode, where nothing is parsed except [/code]
+
+          for ($i = $match_idx + 1; $i < $match_count; $i ++)
+          {
+            list($search_tag, $search_offset)  = $matches[0][$i];
+            if ($search_tag[1] !== '/') { continue; }
+            if (self::normalize(substr($search_tag, 2, -1)) === 'pre') { break; }
+          }
+
+          if ($i < $match_count) {
+            // successfully found ending tag
+
+            // encode everything contained between here and there
+            $output = $output . '<pre>' . self::encode(substr($input, $input_ptr, $search_offset - $input_ptr)) . '</pre>';
+            // advance ptr (again)
+            $input_ptr = $search_offset + strlen($search_tag);
+            // update search position
+            $match_idx = $i;
+          } else {
+            // Unrecognized type!
+            $output = $output . $tag;
+          }
+        } elseif ($type === 'a') {
+          // URL handling.  Two modes: [a=url]title[/a] and [a]url[/a].
+          //  Verify enclosing value first.
+          $buffer = null;
+          $i = $match_idx + 1;
+          if ($i < $match_count) {
+            list($search_tag, $search_offset)  = $matches[0][$i];
+            if ($search_tag[1] === '/') {
+              if (self::normalize(substr($search_tag, 2, -1)) === 'a') {
+                $buffer = substr($input, $input_ptr, $search_offset - $input_ptr);
+              }
+            }
+          }
+
+          // matched something in the middle
+          if (isset($buffer)) {
+            if (isset($args[0][1])) {
+              // $buffer is the title
+              $url = $args[0][1];
+            } else {
+              // $buffer is the url
+              $url = $buffer;
+            }
+            // emit the tag
+            $output = $output . '<a href="' . $url . '">' . self::encode($buffer) . '</a>';
+            // advance ptr (again)
+            $input_ptr = $search_offset + strlen($search_tag);
+            // update search position
+            $match_idx = $i;
+          } else {
+            // Unrecognized type!
+            $output = $output . $tag;
+          }
+
+        } elseif ($type === 'img') {
+          // image handling.  [img (optional=args go=here)]url[/img].
+          //  Verify enclosing value first.
+          $buffer = null;
+          $i = $match_idx + 1;
+          if ($i < $match_count) {
+            list($search_tag, $search_offset)  = $matches[0][$i];
+            if ($search_tag[1] === '/') {
+              if (self::normalize(substr($search_tag, 2, -1)) === 'img') {
+                $buffer = substr($input, $input_ptr, $search_offset - $input_ptr);
+              }
+            }
+          }
+
+          // matched something in the middle
+          if (isset($buffer)) {
+            // emit the tag
+            $output = $output . '<img src="' . $buffer . '">';
+            // advance ptr (again)
+            $input_ptr = $search_offset + strlen($search_tag);
+            // update search position
+            $match_idx = $i;
+          } else {
+            // Unrecognized type!
+            $output = $output . $tag;
+          }
+
+
+        // ADD CUSTOM TAGS HERE
+
+        } else {
+          // Unrecognized type!
+          $output = $output . $tag;
+        }
       }
     }
 
-  // TODO: Handling for all modes.
+    // pick up any stray chars and HTML-encode them
+    $output .= self::encode(substr($input, $input_ptr));
+
     // Close any remaining stray tags left on the stack
     while ($stack)
     {
       $tag = array_pop($stack);
-      $result = $result . '</' . $tag . '>';
+      $output = $output . '</' . $tag . '>';
     }
 
-    // All done!
-    return $result;
+    return $output;
   }
 }
 

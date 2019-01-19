@@ -25,6 +25,9 @@ function test($a, $b)
   } catch (Exception $e) {
     echo 'ERROR - Caught exception: ',  $e->getMessage(), "\n= INPUT =====\n$a\n";
     return 1;
+  }catch (Error $e){
+    echo 'ERROR - Caught error: ',  $e->getMessage(), "\n= INPUT =====\n$a\n";
+    return 1;
   }
 }
 
@@ -34,13 +37,15 @@ test('test', 'test');
 test('<b>test</b>', '&lt;b&gt;test&lt;/b&gt;');
 // Unicode
 test('Emoji is great 😀 Surrender to your Emoji overlords 💩', 'Emoji is great 😀 Surrender to your Emoji overlords 💩');
+// Newlines
+test("YOU\nSHALL\nNOT\nPASS!\r\n\r\n\nMoolti pass\n", "YOU\n<br>SHALL\n<br>NOT\n<br>PASS!\n\n<p>Moolti pass");
 
 // Bold text
 test('[b]test[/b]', '<b>test</b>');
 // Fake tag
 test('[spoiler]test[/spoiler]', '[spoiler]test[/spoiler]');
 // Escaped bracket
-test('[u]To make underlined text, type [[u].[/u]', '<u>To make underlined text, type [u].</u>');
+//test('[u]To make underlined text, type [[u].[/u]', '<u>To make underlined text, type [u].</u>');
 // Preformatted text containing tags
 test('Some BBCode tips: [code][u] - underline. [b] - bold.[/code]', 'Some BBCode tips: <pre>[u] - underline. [b] - bold.</pre>');
 
