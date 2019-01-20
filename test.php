@@ -38,14 +38,15 @@ test('<b>test</b>', '&lt;b&gt;test&lt;/b&gt;');
 // Unicode
 test('Emoji is great 😀 Surrender to your Emoji overlords 💩', 'Emoji is great 😀 Surrender to your Emoji overlords 💩');
 // Newlines
-test("YOU\nSHALL\nNOT\nPASS!\r\n\r\n\nMoolti pass\n", "YOU\n<br>SHALL\n<br>NOT\n<br>PASS!\n\n<p>Moolti pass");
+test("YOU\nSHALL\nNOT\nPASS!\r\n\r\n\nMoolti pass", "YOU\n<br>SHALL\n<br>NOT\n<br>PASS!\n\n<p>Moolti pass");
 
 // Bold text
 test('[b]test[/b]', '<b>test</b>');
 // Fake tag
 test('[spoiler]test[/spoiler]', '[spoiler]test[/spoiler]');
-// Escaped bracket
-//test('[u]To make underlined text, type [[u].[/u]', '<u>To make underlined text, type [u].</u>');
+// Font adjustments
+test('[font color=red]Red text [font size=200%]and BIG![/font][/font]  Now normal, and [font color=blue size=50%]now blue and small.[/font]', '<span style="color: red">Red text <span style="font-size: 200%">and BIG!</font></font>  Now normal, and <span style="font-size: 50%;color: blue">now blue and small.</font>');
+
 // Preformatted text containing tags
 test('Some BBCode tips: [code][u] - underline. [b] - bold.[/code]', 'Some BBCode tips: <pre>[u] - underline. [b] - bold.</pre>');
 
@@ -53,6 +54,8 @@ test('Some BBCode tips: [code][u] - underline. [b] - bold.[/code]', 'Some BBCode
 test('Get the latest php-bbcode release here: [url]https://github.com/greg-kennedy/php-bbcode[/url]', 'Get the latest php-bbcode release here: <a href="https://github.com/greg-kennedy/php-bbcode">https://github.com/greg-kennedy/php-bbcode</a>');
 // URL tests: complex
 test('Get the latest php-bbcode release [url=https://github.com/greg-kennedy/php-bbcode]here[/url].', 'Get the latest php-bbcode release <a href="https://github.com/greg-kennedy/php-bbcode">here</a>.');
+// URL encoding test
+test('Do a Barrel Roll: [url]https://google.com/search?oq=do+a+barrel+roll&q=do+a+barrel+roll[/a]!', 'Do a Barrel Roll: <a href="https://google.com/search?oq=do+a+barrel+roll&q=do+a+barrel+roll">https://google.com/search?oq=do+a+barrel+roll&amp;q=do+a+barrel+roll</a>!');
 // IMG test
 test('Check out this image: [img]http://www.example.com/image.jpg[/img]', 'Check out this image: <img src="http://www.example.com/image.jpg">');
 
