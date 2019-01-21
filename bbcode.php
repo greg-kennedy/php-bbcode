@@ -41,7 +41,7 @@ class BBCode
       function(&$a) { return explode('=', $a, 2); },
       explode(' ', $inner));
 
-    // first item is special
+    // first "param" is special - it's the tag name and (optionally) the default arg
     $first = array_shift($params);
 
     // tag name
@@ -58,8 +58,10 @@ class BBCode
 
     // finally, put the rest of the args in the list
     //array_walk( $params, function(&$a, $i, &$args) { print_r($args); $args[strtolower($a[1])] = $a[0]; }, $args);
-    foreach ($params as list($k, $v)) {
-      $args[strtolower($k)] = $v;
+    foreach ($params as &$param) {
+      $k = isset($param[0]) ? strtolower($param[0]) : '';
+      $v = isset($param[1]) ? $param[1] : '';
+      $args[$k] = $v;
     }
 
     return [ 'name' => $name, 'open' => $open, 'args' => $args ];
@@ -299,8 +301,26 @@ class BBCode
 
           // matched something in the middle
           if (isset($buffer)) {
+            // Image size adjustment - accepts width and height
+            $img_param = [];
+
+            if (isset ($args['width'])) {
+  //TODO: size validation
+              $img_param['width'] = $args['width'];
+            }
+            if (isset ($args['height'])) {
+  //TODO: size validation
+              $img_param['height'] = $args['height'];
+            }
+//TODO: handle bad settings
+
             // emit the tag
-            $output = $output . '<img src="' . $buffer . '">';
+            $output = $output . '<img src="' . $buffer . '"';
+            foreach ($img_param as $name=>$value) {
+              $output = $output . ' ' . $name . '="' . $value . '"';
+            }
+            $output .= '>';
+
             // advance ptr (again)
             $input_ptr = $search_offset + strlen($search_match);
             // update search position

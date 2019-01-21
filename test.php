@@ -58,11 +58,15 @@ test('Get the latest php-bbcode release [url=https://github.com/greg-kennedy/php
 test('Do a Barrel Roll: [url]https://google.com/search?oq=do+a+barrel+roll&q=do+a+barrel+roll[/a]!', 'Do a Barrel Roll: <a href="https://google.com/search?oq=do+a+barrel+roll&q=do+a+barrel+roll">https://google.com/search?oq=do+a+barrel+roll&amp;q=do+a+barrel+roll</a>!');
 // IMG test
 test('Check out this image: [img]http://www.example.com/image.jpg[/img]', 'Check out this image: <img src="http://www.example.com/image.jpg">');
+// IMG test (with args)
+test('Check out this image: [img width=640 height=480]http://www.example.com/image.jpg[/img]', 'Check out this image: <img src="http://www.example.com/image.jpg" width="640" height="480">');
 
 // Unclosed tag
 test('[b]test', '<b>test</b>');
 // Unterminated tag
 test('[btest', '[btest');
+// Tags with args that should not have args
+test('[b=7]Bold [i =3]italic[/i][/b 5]', '<b>Bold <i>italic</i></b>');
 // Sneaking in an HTML tag?
 test('[b<a href="https://google.com?q=example[b>Ha, gotcha?[a]', '[b&lt;a href="https://google.com?q=example[b&gt;Ha, gotcha?[a]');
 // Unordered tag
@@ -70,6 +74,6 @@ test('Here is [b]bold and [i]italics[/b][/i] text.', 'Here is <b>bold and <i>ita
 // Mismatched aliased tag
 test('A wise man once said: [quote]Do not parse HTML with a regex.[/blockquote] I think he was on to something.', 'A wise man once said: <blockquote>Do not parse HTML with a regex.</blockquote> I think he was on to something.');
 // td outside tr
-test('[table][tr][th]Name[/th][th]Phone[/th][/tr][td]Greg[/td][td]555-1212[/td][/table]','<table><tr><th>Name</th><th>Phone</th></tr>[td]Greg[/td][td]555-1212[/td]</table>');
+test('[table][tr][th]Name[/th][th]Phone[/th][/tr][td]Greg[/td][td]555-1212[/td][/table]', '<table><tr><th>Name</th><th>Phone</th></tr>[td]Greg[/td][td]555-1212[/td]</table>');
 
 ?>
