@@ -19,7 +19,8 @@ class BBCode
     'url' => 'a',
     'code' => 'pre',
     'quote' => 'blockquote',
-    '*' => 'li'
+    '*' => 'li',
+    'list' => 'ul'
   ];
 
   // helper function: normalize a potential "tag"
